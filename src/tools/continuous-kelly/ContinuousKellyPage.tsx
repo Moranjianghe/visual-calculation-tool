@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { NavLink } from 'react-router-dom'
 import { KellyChart } from './KellyChart'
 import {
   calculateKelly,
@@ -6,7 +7,7 @@ import {
   initialPoints,
   sortedProbabilities,
 } from './math'
-import type { DistributionPoint, KellyConstraints } from './types'
+import type { DistributionPoint, KellyConstraints, XAxisMode } from './types'
 
 const defaultConstraints: KellyConstraints = {
   maxPositionPercent: 20,
@@ -24,6 +25,7 @@ export function ContinuousKellyPage() {
   const [points, setPoints] = useState<DistributionPoint[]>(initialPoints)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [constraints, setConstraints] = useState<KellyConstraints>(defaultConstraints)
+  const [xAxisMode, setXAxisMode] = useState<XAxisMode>('log-wealth')
 
   const dist = useMemo(() => sortedProbabilities(points), [points])
   const result = useMemo(() => calculateKelly(dist, constraints), [dist, constraints])
@@ -45,10 +47,10 @@ export function ContinuousKellyPage() {
           </div>
         </div>
         <nav className="tool-list">
-          <button className="tool-item active" type="button" aria-current="page">
+          <NavLink className="tool-item active" to="/tools/continuous-kelly">
             <span className="tool-item-title">连续凯利</span>
             <span className="tool-item-meta">仓位 / 分布</span>
-          </button>
+          </NavLink>
           <button className="tool-item" type="button" disabled>
             <span className="tool-item-title">几何工具</span>
             <span className="tool-item-meta">待添加</span>
@@ -70,6 +72,22 @@ export function ContinuousKellyPage() {
             </p>
           </div>
           <div className="actions" aria-label="图表操作">
+            <div className="segmented" aria-label="横轴模式">
+              <button
+                className={xAxisMode === 'log-wealth' ? 'active' : ''}
+                type="button"
+                onClick={() => setXAxisMode('log-wealth')}
+              >
+                对数财富轴
+              </button>
+              <button
+                className={xAxisMode === 'linear-return' ? 'active' : ''}
+                type="button"
+                onClick={() => setXAxisMode('linear-return')}
+              >
+                收益率轴
+              </button>
+            </div>
             <button
               className="btn"
               type="button"
@@ -142,11 +160,17 @@ export function ContinuousKellyPage() {
           <KellyChart
             points={points}
             selectedIndex={selectedIndex}
+            xAxisMode={xAxisMode}
             onPointsChange={setPoints}
             onSelectedIndexChange={setSelectedIndex}
           />
           <div className="hint">
-            <span>横轴：单期收益率 R。纵轴：概率权重，自动归一化。</span>
+            <span>
+              横轴：
+              {xAxisMode === 'log-wealth'
+                ? '按 ln(1 + R) 排布，亏 50% 与翻倍对称。'
+                : '按单期收益率 R 线性排布。'}
+            </span>
             <span>操作：拖动点；双击图表新增点；选中点后按 Delete 删除。</span>
           </div>
         </section>

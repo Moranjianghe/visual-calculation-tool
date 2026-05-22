@@ -23,3 +23,5 @@ export type KellyResult = {
   finalPosition: number
   reason: 'max-position' | 'stress-cap' | 'kelly-fraction'
 }
+
+export type XAxisMode = 'log-wealth' | 'linear-return'

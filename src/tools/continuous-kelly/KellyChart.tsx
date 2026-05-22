@@ -1,25 +1,24 @@
 import { useEffect, useRef } from 'react'
-import {
-  clamp,
-  sortedProbabilities,
-  X_MAX,
-  X_MIN,
-  Y_MAX,
-} from './math'
-import type { DistributionPoint } from './types'
+import { clamp, normalizePoints, sortedProbabilities, X_MAX, X_MIN, Y_MAX } from './math'
+import type { DistributionPoint, XAxisMode } from './types'
 
 type KellyChartProps = {
   points: DistributionPoint[]
   selectedIndex: number
+  xAxisMode: XAxisMode
   onPointsChange: (points: DistributionPoint[]) => void
   onSelectedIndexChange: (index: number) => void
 }
 
 const margin = { left: 58, right: 18, top: 22, bottom: 46 }
+const LOG_X_MIN = -0.95
+const linearTicks = [-1, -0.5, 0, 0.5, 1, 1.5, 2]
+const logTicks = [-0.75, -0.5, -0.25, 0, 1 / 3, 1, 2]
 
 export function KellyChart({
   points,
   selectedIndex,
+  xAxisMode,
   onPointsChange,
   onSelectedIndexChange,
 }: KellyChartProps) {
@@ -29,6 +28,7 @@ export function KellyChart({
   const pointsRef = useRef(points)
   const selectedIndexRef = useRef(selectedIndex)
   const hoveredIndexRef = useRef(-1)
+  const xAxisModeRef = useRef(xAxisMode)
 
   useEffect(() => {
     pointsRef.current = points
@@ -37,6 +37,10 @@ export function KellyChart({
   useEffect(() => {
     selectedIndexRef.current = selectedIndex
   }, [selectedIndex])
+
+  useEffect(() => {
+    xAxisModeRef.current = xAxisMode
+  }, [xAxisMode])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -60,6 +64,13 @@ export function KellyChart({
 
     const xScale = (r: number) => {
       const box = innerRect()
+      if (xAxisModeRef.current === 'log-wealth') {
+        const zMin = Math.log1p(LOG_X_MIN)
+        const zMax = Math.log1p(X_MAX)
+        const z = Math.log1p(clamp(r, LOG_X_MIN, X_MAX))
+        return box.x + ((z - zMin) / (zMax - zMin)) * box.w
+      }
+
       return box.x + ((r - X_MIN) / (X_MAX - X_MIN)) * box.w
     }
 
@@ -70,6 +81,13 @@ export function KellyChart({
 
     const xInvert = (px: number) => {
       const box = innerRect()
+      if (xAxisModeRef.current === 'log-wealth') {
+        const zMin = Math.log1p(LOG_X_MIN)
+        const zMax = Math.log1p(X_MAX)
+        const z = zMin + ((px - box.x) / box.w) * (zMax - zMin)
+        return Math.expm1(z)
+      }
+
       return X_MIN + ((px - box.x) / box.w) * (X_MAX - X_MIN)
     }
 
@@ -91,7 +109,8 @@ export function KellyChart({
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
 
-      for (let x = -1; x <= 2.001; x += 0.5) {
+      const ticks = xAxisModeRef.current === 'log-wealth' ? logTicks : linearTicks
+      for (const x of ticks) {
         const px = xScale(x)
         ctx.beginPath()
         ctx.moveTo(px, box.y)
@@ -127,7 +146,11 @@ export function KellyChart({
       ctx.fillStyle = '#344054'
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
-      ctx.fillText('收益率 R', box.x + box.w - 62, box.y + box.h + 30)
+      ctx.fillText(
+        xAxisModeRef.current === 'log-wealth' ? '收益率 R（对数财富间距）' : '收益率 R',
+        box.x + box.w - 132,
+        box.y + box.h + 30,
+      )
       ctx.save()
       ctx.translate(14, box.y + 82)
       ctx.rotate(-Math.PI / 2)
@@ -189,6 +212,12 @@ export function KellyChart({
       drawDistribution()
     }
 
+    const commitPoints = (next: DistributionPoint[]) => {
+      const normalized = normalizePoints(next)
+      pointsRef.current = normalized
+      onPointsChange(normalized)
+    }
+
     const resizeCanvas = () => {
       const rect = wrap.getBoundingClientRect()
       canvas.width = Math.max(1, Math.round(rect.width * dpr))
@@ -225,11 +254,11 @@ export function KellyChart({
       const next = [
         ...pointsRef.current,
         {
-          r: clamp(xInvert(pos.x), X_MIN, X_MAX),
+          r: clamp(xInvert(pos.x), xAxisModeRef.current === 'log-wealth' ? LOG_X_MIN : X_MIN, X_MAX),
           w: clamp(yInvert(pos.y), 0.005, 0.8),
         },
       ]
-      onPointsChange(next)
+      commitPoints(next)
       onSelectedIndexChange(next.length - 1)
       return next.length - 1
     }
@@ -263,11 +292,15 @@ export function KellyChart({
       }
 
       canvas.style.cursor = 'grabbing'
-      onPointsChange(
+      commitPoints(
         pointsRef.current.map((point, pointIndex) =>
           pointIndex === index
             ? {
-                r: clamp(xInvert(pos.x), X_MIN, X_MAX),
+                r: clamp(
+                  xInvert(pos.x),
+                  xAxisModeRef.current === 'log-wealth' ? LOG_X_MIN : X_MIN,
+                  X_MAX,
+                ),
                 w: clamp(yInvert(pos.y), 0.001, Y_MAX),
               }
             : point,
@@ -299,7 +332,7 @@ export function KellyChart({
         selected >= 0 &&
         pointsRef.current.length > 3
       ) {
-        onPointsChange(pointsRef.current.filter((_, index) => index !== selected))
+        commitPoints(pointsRef.current.filter((_, index) => index !== selected))
         onSelectedIndexChange(-1)
       }
     }
@@ -329,7 +362,7 @@ export function KellyChart({
     const canvas = canvasRef.current
     if (!canvas) return
     window.dispatchEvent(new Event('resize'))
-  }, [points, selectedIndex])
+  }, [points, selectedIndex, xAxisMode])
 
   return (
     <div ref={wrapRef} className="chart-wrap">
